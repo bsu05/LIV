@@ -1,4 +1,4 @@
-# Constants
+#Constants
 # s = (13e3)**2 # Center-of-mass energy squared in GeV^2
 s = (13e3)**2 # Center-of-mass energy squared in GeV^2
 

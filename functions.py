@@ -80,7 +80,7 @@ def term_1(Q2, e_f):
     return e_f**2 / (2*Q2**2)
     
 def term_2(Q2, e_f, g):
-    return abs((((1 - (m_Z**2 / Q2)) / ((Q2 - m_Z**2)**2 + m_Z**2 * Gamma_Z**2)) *
+    return ((((1 - (m_Z**2 / Q2)) / ((Q2 - m_Z**2)**2 + m_Z**2 * Gamma_Z**2)) *
             (1 - 4 * sin2th_w) / (4 * sin2th_w * (1- sin2th_w ))* e_f * g))
             
 def term_3(Q2, e_f, g):
@@ -127,13 +127,14 @@ def d_sigma_full(Q2, CL, CR, p1, p2, quark_couplings):
     sm = d_sigma_sm(Q2, quark_couplings)
     return sm + liv  # This is also d\sigma / dQ^2
 
+#dQ^2 SM only
 def sigma_sm(Qmin, Qmax, quark_couplings):
     def inet(Q2):
         return d_sigma_sm(Q2, quark_couplings)
     int, _ = quad(inet, Qmin**2, Qmax**2)
     return int
     
-    
+#dQ^2 LIV only    
 def sme(Q_min, Q_max, CL, CR, p1, p2, quark_couplings, num_steps=100):
     num_steps = int(num_steps)
     
@@ -151,7 +152,7 @@ def sme(Q_min, Q_max, CL, CR, p1, p2, quark_couplings, num_steps=100):
     
     return integral_liv
 
-
+#dQ^2 full (SM + SME)
 def sigma_full(Q_min, Q_max, CL, CR, p1, p2, quark_couplings, num_steps=100):
     num_steps = int(num_steps)
     
@@ -168,6 +169,7 @@ def sigma_full(Q_min, Q_max, CL, CR, p1, p2, quark_couplings, num_steps=100):
 
     return integral_full
 
+#DQ SM piece
 def dsigma_dQ(Q2, quark_couplings):
     Q= np.sqrt(Q2)
     sm = d_sigma_sm(Q2, quark_couplings)
@@ -213,6 +215,104 @@ def dsigma_dQ_3(Q2, quark_couplings):
         sum_terms =  term_3(Q2, e_f, g_fL)+ term_3(Q2, e_f, g_fR)
 
         d_sigma +=  sum_terms * integral
-    
+
     d_sigmasm =  factor * 0.389379 * 1e9* d_sigma    # Conversion from GeV^-2 to Pb
     return 2*Q*d_sigmasm
+
+
+
+
+
+
+
+# Rapidity-dependent cross sections.
+#
+#     y = (1/2) ln(x1/x2),   with   x1 * x2 = tau = Q^2 / s.
+#     x1 = sqrt(tau) * exp(+y),   x2 = sqrt(tau) * exp(-y),
+#    |y| < y_max = (1/2) ln(1/tau) = (1/2) ln(s/Q^2).
+#
+# The existing dQ^2 code integrates over x = x1 with integrand  (...) * tau_x dx,
+# where tau_x = tau/x = x2.  Changing variables x1 -> y gives  dx1 = x1 dy, so
+#     (...) * (tau/x1) * dx1  =  (...) * tau dy.
+# So d_sigma_sm / d_sigma evaluated at x1 = sqrt(tau) e^y, with the x-integral
+
+
+
+'''def y_max_of_Q2(Q2):
+    return 0.5 * np.log(s / Q2)
+
+
+def d2sigma_dQ2_dy_sm(Q2, y, quark_couplings):
+    tau = Q2 / s
+    if abs(y) >= y_max_of_Q2(Q2):
+        return 0.0
+
+    x1 = np.sqrt(tau) * np.exp(y)          # x2 = tau/x1 = sqrt(tau) e^{-y}
+    d_sigma = 0.0
+    for flavor, e_f, g_fR, g_fL in quark_couplings:
+        f_val = f_s(x1, tau, flavor, Q2)
+        termL = summation_terms(Q2, e_f, g_fL)
+        termR = summation_terms(Q2, e_f, g_fR)
+        d_sigma += (termL + termR) * tau * f_val
+
+    return factor * 0.389379 * 1e9 * d_sigma
+
+
+def d2sigma_dQ2_dy_liv(Q2, y, CL, CR, p1, p2, quark_couplings):
+    tau = Q2 / s
+    if abs(y) >= y_max_of_Q2(Q2):
+        return 0.0
+    x1 = np.sqrt(tau) * np.exp(y)
+    d_sigmaL = 0.0
+    d_sigmaR = 0.0
+    for flavor, e_f, g_fR, g_fL in quark_couplings:
+        # sigma_hat_prime returns (term1, term2+term3); term2+term3 is the SME part,
+        # evaluated at x = x1
+        _, sme_L = sigma_hat_prime(x1, tau, CL, p1, p2, flavor, Q2)
+        _, sme_R = sigma_hat_prime(x1, tau, CR, p1, p2, flavor, Q2)
+        d_sigmaL += summation_terms(Q2, e_f, g_fL) * sme_L
+        d_sigmaR += summation_terms(Q2, e_f, g_fR) * sme_R
+
+    return factor * 0.389379 * 1e9 * tau * (d_sigmaL + d_sigmaR)
+
+
+def d2sigma_dQ2_dy_full(Q2, y, CL, CR, p1, p2, quark_couplings):
+    return (d2sigma_dQ2_dy_sm(Q2, y, quark_couplings)
+            + d2sigma_dQ2_dy_liv(Q2, y, CL, CR, p1, p2, quark_couplings))
+
+
+# ---- dsigma/dy : integrate the densities over a Q window  ------------------
+# At fixed y only Q^2 with y_max(Q^2) > |y|  (i.e. Q^2 < s e^{-2|y|}) contribute,
+# so the upper Q^2 limit is capped to keep the integrand in the physical region.
+
+def _Q2_bounds(y, Q_min, Q_max):
+    Q2_lo = Q_min ** 2
+    Q2_hi = min(Q_max ** 2, s * np.exp(-2.0 * abs(y)))
+    return Q2_lo, Q2_hi
+
+
+def dsigma_dy_sm(y, Q_min, Q_max, quark_couplings):
+    """SM  d sigma / dy  [pb], integrated over Q in [Q_min, Q_max]."""
+    Q2_lo, Q2_hi = _Q2_bounds(y, Q_min, Q_max)
+    if Q2_hi <= Q2_lo:
+        return 0.0
+    val, _ = quad(lambda Q2: d2sigma_dQ2_dy_sm(Q2, y, quark_couplings),
+                  Q2_lo, Q2_hi)
+    return val
+
+
+def dsigma_dy_liv(y, Q_min, Q_max, CL, CR, p1, p2, quark_couplings):
+    """LIV-only  d sigma / dy  [pb], integrated over Q in [Q_min, Q_max]."""
+    Q2_lo, Q2_hi = _Q2_bounds(y, Q_min, Q_max)
+    if Q2_hi <= Q2_lo:
+        return 0.0
+    val, _ = quad(lambda Q2: d2sigma_dQ2_dy_liv(Q2, y, CL, CR, p1, p2, quark_couplings),
+                  Q2_lo, Q2_hi)
+    return val
+
+
+def dsigma_dy_full(y, Q_min, Q_max, CL, CR, p1, p2, quark_couplings):
+    """Full (SM + SME)  d sigma / dy  [pb], integrated over Q in [Q_min, Q_max]."""
+    return (dsigma_dy_sm(y, Q_min, Q_max, quark_couplings)
+            + dsigma_dy_liv(y, Q_min, Q_max, CL, CR, p1, p2, quark_couplings))
+'''
